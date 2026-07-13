@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function self(uid) { return signedIn() && request.auth.uid == uid; }
+    function role() {
+      return signedIn() && request.auth.token.role != null
+        ? request.auth.token.role
+        : 'farmer';
+    }
+    function privileged() {
+      return role() in ['admin', 'administrator', 'agricultural_officer', 'laboratory_staff'];
+    }
+    function owns(data) {
+      return signedIn() && (
+        data.userId == request.auth.uid ||
+        data.ownerId == request.auth.uid ||
+        data.farmerId == request.auth.uid ||
+        data.uid == request.auth.uid
+      );
+    }
+    function validOwnerOnCreate() { return owns(request.resource.data) || privileged(); }
+
+    match /users/{uid} {
+      allow read: if self(uid) || privileged();
+      allow create: if self(uid);
+      allow update: if self(uid) && request.resource.data.role == resource.data.role
+                    || privileged();
+      allow delete: if privileged();
+    }
+
+    match /{collection}/{documentId} {
+      allow read: if collection != 'ai_models' && collection != 'system_logs'
+                  && (privileged() || owns(resource.data));
+      allow create: if collection != 'ai_models' && collection != 'system_logs'
+                    && validOwnerOnCreate();
+      allow update: if collection != 'ai_models' && collection != 'system_logs'
+                    && (privileged() || (owns(resource.data) && owns(request.resource.data)));
+      allow delete: if collection != 'ai_models' && collection != 'system_logs'
+                    && (privileged() || owns(resource.data));
+    }
+
+    match /ai_models/{modelId} {
+      allow read: if signedIn();
+      allow write: if role() in ['admin', 'administrator'];
+    }
+    match /system_logs/{logId} {
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow read, update, delete: if role() in ['admin', 'administrator'];
+    }
+  }
+}

@@ -1,0 +1,26 @@
+name: Firestore backup
+
+on:
+  schedule:
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: firestore-backup
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    environment: production-backup
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Export Firestore
+        run: gcloud firestore export "gs://${{ vars.BACKUP_BUCKET }}/firestore/$(date -u +%Y-%m-%dT%H-%M-%SZ)" --project="${{ vars.FIREBASE_PROJECT_ID }}"
+

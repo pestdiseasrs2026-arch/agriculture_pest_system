@@ -1,0 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:agriculture_pest_system/features/insights/data/insights_repository.dart';
+import 'package:agriculture_pest_system/features/insights/domain/insight_models.dart';
+
+final insightsRepositoryProvider=Provider((ref)=>InsightsRepository(FirebaseFirestore.instance,FirebaseStorage.instance,FirebaseMessaging.instance));
+final analyticsSummaryProvider=StreamProvider.autoDispose.family<AnalyticsSummary,String>((ref,uid) async* { final repo=ref.watch(insightsRepositoryProvider); await for(final detections in repo.detections(uid)){ final crops=await repo.crops(uid).first; final groups=<DateTime,List<double>>{}; final activities=<ActivityRecord>[]; for(final d in detections){ final date=DateTime.tryParse(d.date)??DateTime.now(); final day=DateTime(date.year,date.month,date.day); groups.putIfAbsent(day,()=>[]).add(double.tryParse(d.confidenceScore)??0); activities.add(ActivityRecord(id:d.id,actor:'AI model',action:'Detection completed',entity:'${d.cropType}: ${d.diseaseName}',category:d.severity,timestamp:date)); } final points=groups.entries.map((e)=>AnalyticsPoint(e.key,e.value.length,e.value.fold<double>(0,(a,b)=>a+b)/e.value.length)).toList()..sort((a,b)=>a.date.compareTo(b.date)); final average=detections.isEmpty?0.0:detections.fold<double>(0,(a,d)=>a+(double.tryParse(d.confidenceScore)??0))/detections.length; yield AnalyticsSummary(detections:detections.length,activeIssues:detections.where((d)=>d.severity.toLowerCase()!='low').length,pestSignals:detections.where((d)=>d.diseaseName.toLowerCase().contains('pest')).length,cropCount:crops.length,averageConfidence:average,points:points,activities:activities..sort((a,b)=>b.timestamp.compareTo(a.timestamp))); } });
+final notificationFilterProvider=NotifierProvider<NotificationFilterController,NotificationFilter>(NotificationFilterController.new);
+class NotificationFilterController extends Notifier<NotificationFilter>{@override NotificationFilter build()=>const NotificationFilter(); void set(NotificationFilter value)=>state=value;}
+final notificationsProvider=StreamProvider.autoDispose.family<QuerySnapshot<Map<String,dynamic>>,String>((ref,uid)=>ref.watch(insightsRepositoryProvider).notifications(uid));

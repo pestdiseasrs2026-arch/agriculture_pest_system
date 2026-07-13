@@ -1,0 +1,40 @@
+name: Restore Firestore backup
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_uri:
+        description: Exact gs:// export URI
+        required: true
+        type: string
+      confirmation:
+        description: Type RESTORE_PRODUCTION
+        required: true
+        type: string
+
+concurrency:
+  group: firestore-production-restore
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    steps:
+      - if: inputs.confirmation != 'RESTORE_PRODUCTION'
+        run: exit 1
+      - if: ${{ !startsWith(inputs.backup_uri, 'gs://') }}
+        run: exit 1
+
+  restore:
+    needs: authorize
+    runs-on: ubuntu-latest
+    environment: production-restore
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud firestore import "${{ inputs.backup_uri }}" --project="${{ vars.FIREBASE_PROJECT_ID }}"

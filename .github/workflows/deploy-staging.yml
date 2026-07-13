@@ -1,0 +1,43 @@
+name: Deploy staging
+
+on:
+  workflow_run:
+    workflows: [Quality gates]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: firebase-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --global firebase-tools
+      - run: npm install --no-audit --no-fund
+        working-directory: functions
+      - run: npm run build
+        working-directory: functions
+      - run: flutter pub get
+      - run: flutter build web --release --no-pub --dart-define=APP_ENV=staging --dart-define=AI_API_URL=${{ vars.AI_API_URL }}
+      - run: firebase deploy --project "${{ vars.FIREBASE_PROJECT_ID }}" --only firestore:rules,firestore:indexes,database,storage,remoteconfig,functions:operations,hosting --non-interactive

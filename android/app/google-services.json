@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "255688407055",
+    "project_id": "agriculture-pest-system-96401",
+    "storage_bucket": "agriculture-pest-system-96401.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:255688407055:android:702363255b22972032cb7a",
+        "android_client_info": {
+          "package_name": "com.example.agriculture_pest_system"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFVVa5PzCiViDmkuyiB4v3kc-VouwDh-o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

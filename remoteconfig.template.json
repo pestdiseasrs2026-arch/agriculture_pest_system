@@ -1,0 +1,10 @@
+{
+  "parameters": {
+    "maintenance_mode": {"defaultValue": {"value": "false"}, "valueType": "BOOLEAN"},
+    "maintenance_message": {"defaultValue": {"value": "The service is temporarily undergoing maintenance. Please retry later."}, "valueType": "STRING"},
+    "ai_detection_enabled": {"defaultValue": {"value": "true"}, "valueType": "BOOLEAN"},
+    "uploads_enabled": {"defaultValue": {"value": "true"}, "valueType": "BOOLEAN"},
+    "minimum_supported_version": {"defaultValue": {"value": "1.0.0"}, "valueType": "STRING"}
+  },
+  "version": {"description": "Production-safe defaults"}
+}
