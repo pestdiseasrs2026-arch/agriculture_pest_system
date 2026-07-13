@@ -23,7 +23,8 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-pub
       - run: flutter test --no-pub --reporter compact
-      - run: flutter drive --driver=test_driver/integration_test.dart --target=integration_test/critical_path_test.dart -d chrome --no-pub
+      - name: Run Chrome integration tests
+        run: xvfb-run --auto-servernum flutter drive --driver=test_driver/integration_test.dart --target=integration_test/critical_path_test.dart -d chrome --no-pub
       - run: flutter build web --release --no-pub --dart-define=APP_ENV=production
 
   android:
