@@ -1,0 +1,83 @@
+name: Post-launch verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Immutable production commit SHA
+        required: true
+      confirm:
+        description: Type VERIFY_PRODUCTION
+        required: true
+
+concurrency:
+  group: post-launch-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate immutable revision and confirmation
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          test "$CONFIRM" = "VERIFY_PRODUCTION"
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+  smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production-observability
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+      - name: Verify production HTTPS and application shell
+        env:
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+        run: |
+          test -n "$APP_BASE_URL"
+          [[ "$APP_BASE_URL" == https://* ]]
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-all-errors --max-time 30 \
+            --output /tmp/index.html "$APP_BASE_URL"
+          grep --quiet '<flutter-view\|flutter_bootstrap.js\|main.dart.js' /tmp/index.html
+      - name: Verify security and caching headers
+        env:
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+        run: |
+          headers="$(curl --fail --silent --show-error --head --location --max-time 30 "$APP_BASE_URL")"
+          echo "$headers" | grep --ignore-case --quiet '^strict-transport-security:'
+          echo "$headers" | grep --ignore-case --quiet '^content-type:'
+          echo "$headers" | grep --ignore-case --quiet '^cache-control:'
+      - name: Verify AI health endpoint without inference data
+        if: ${{ vars.AI_HEALTH_URL != '' }}
+        env:
+          AI_HEALTH_URL: ${{ vars.AI_HEALTH_URL }}
+          AI_HEALTH_TOKEN: ${{ secrets.AI_HEALTH_TOKEN }}
+        run: |
+          [[ "$AI_HEALTH_URL" == https://* ]]
+          args=(--fail --silent --show-error --location --retry 2 --retry-all-errors --max-time 20)
+          if [ -n "$AI_HEALTH_TOKEN" ]; then
+            args+=(--header "Authorization: Bearer $AI_HEALTH_TOKEN")
+          fi
+          curl "${args[@]}" "$AI_HEALTH_URL" >/dev/null
+      - name: Record verification evidence
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+        run: |
+          {
+            echo "## Post-launch verification"
+            echo "- Revision: \`$RELEASE_SHA\`"
+            echo "- Target: \`$APP_BASE_URL\`"
+            echo "- HTTPS/application shell: passed"
+            echo "- Security/cache headers: passed"
+            echo "- AI health: ${{ vars.AI_HEALTH_URL != '' && 'passed' || 'not configured' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
