@@ -1,0 +1,80 @@
+name: Scale readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Verification scenario
+        type: choice
+        options: [read-load, regional-chaos-tabletop]
+        required: true
+      confirm:
+        description: Type RUN_STAGING_SCALE_TEST
+        required: true
+
+concurrency:
+  group: staging-scale-readiness
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce staging-only execution
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: test "$CONFIRM" = "RUN_STAGING_SCALE_TEST"
+
+  read-load:
+    if: inputs.scenario == 'read-load'
+    needs: guard
+    runs-on: ubuntu-latest
+    environment: staging-scale-test
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1.2.1
+      - name: Run bounded, read-only load test
+        env:
+          BASE_URL: ${{ vars.APP_BASE_URL }}
+          VIRTUAL_USERS: ${{ vars.LOAD_TEST_VUS || '20' }}
+          TEST_DURATION: ${{ vars.LOAD_TEST_DURATION || '60s' }}
+        run: |
+          test -n "$BASE_URL"
+          [[ "$BASE_URL" == https://* ]]
+          mkdir -p build/scale-readiness
+          k6 run --summary-export=build/scale-readiness/summary.json tooling/load/read_only_smoke.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scale-readiness-summary
+          path: build/scale-readiness/summary.json
+          if-no-files-found: error
+          retention-days: 30
+
+  regional-chaos-tabletop:
+    if: inputs.scenario == 'regional-chaos-tabletop'
+    needs: guard
+    runs-on: ubuntu-latest
+    environment: staging-chaos
+    steps:
+      - name: Create non-mutating drill record
+        env:
+          PRIMARY_REGION: ${{ vars.PRIMARY_REGION }}
+          RECOVERY_REGION: ${{ vars.RECOVERY_REGION }}
+        run: |
+          test -n "$PRIMARY_REGION"
+          test -n "$RECOVERY_REGION"
+          test "$PRIMARY_REGION" != "$RECOVERY_REGION"
+          {
+            echo "## Regional chaos tabletop"
+            echo "No infrastructure was changed by this workflow."
+            echo "- Primary region: \`$PRIMARY_REGION\`"
+            echo "- Recovery region: \`$RECOVERY_REGION\`"
+            echo "- Verify synthetic outage detection and incident declaration."
+            echo "- Verify recovery project access, backup age, DNS/Hosting plan, and AI fallback."
+            echo "- Record measured RTO/RPO and all manual decision points."
+          } >> "$GITHUB_STEP_SUMMARY"
