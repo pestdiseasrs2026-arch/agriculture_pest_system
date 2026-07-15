@@ -28,6 +28,7 @@ migrate_working_dir/
 **/ios/Flutter/.last_build_id
 .dart_tool/
 .venv/
+.venv-ai/
 .agents/
 .codex/
 .flutter-plugins-dependencies
@@ -38,6 +39,17 @@ migrate_working_dir/
 /coverage/
 **/node_modules/
 /functions/lib/
+
+# Local AI datasets, generated manifests, checkpoints, and exports
+/rice+leaf+diseases/
+/DeepWeeds-master/
+/PlantVillage/
+/plantvillage/
+/ai_training/data/
+/ai_training/outputs/
+*.onnx
+*.pt
+*.pth
 
 # Symbolication related
 app.*.symbols
