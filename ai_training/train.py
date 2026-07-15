@@ -7,6 +7,7 @@ import csv
 import json
 import random
 import time
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -14,7 +15,7 @@ import torch
 from PIL import Image
 from sklearn.metrics import classification_report
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import models, transforms
 
 
@@ -112,9 +113,17 @@ def main() -> None:
         selected = [row for row in rows if row["split"] == split]
         if not selected:
             raise ValueError(f"Manifest has no {split} records")
+        sampler = None
+        if split == "train":
+            counts = Counter(int(row["class_index"]) for row in selected)
+            sample_weights = [1.0 / counts[int(row["class_index"])] for row in selected]
+            sampler = WeightedRandomSampler(
+                sample_weights, num_samples=len(selected), replacement=True,
+                generator=torch.Generator().manual_seed(args.seed),
+            )
         loaders[split] = DataLoader(
             ManifestDataset(selected, train_transform if split == "train" else eval_transform),
-            batch_size=args.batch_size, shuffle=split == "train", num_workers=0,
+            batch_size=args.batch_size, shuffle=False, sampler=sampler, num_workers=0,
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -156,6 +165,8 @@ def main() -> None:
         "task": args.task, "architecture": args.architecture, "classes": class_names,
         "best_validation_accuracy": best_accuracy, "test_accuracy": test_accuracy,
         "test_loss": test_loss, "seconds": time.time() - started, "device": str(device),
+        "records_by_split": Counter(row["split"] for row in rows),
+        "records_by_class": Counter(row["class_name"] for row in rows),
         "history": history, "classification_report": report,
     }
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -164,4 +175,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

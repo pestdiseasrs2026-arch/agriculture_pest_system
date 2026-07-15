@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -17,8 +18,9 @@ def normalized(value: str) -> str:
     return value.strip("_")
 
 
-def stable_split(path: Path) -> str:
-    bucket = int(hashlib.sha256(path.as_posix().encode()).hexdigest()[:8], 16) % 100
+def stable_split(value: Path | str) -> str:
+    key = value.as_posix() if isinstance(value, Path) else value
+    bucket = int(hashlib.sha256(key.encode()).hexdigest()[:8], 16) % 100
     return "train" if bucket < 70 else "val" if bucket < 85 else "test"
 
 
@@ -38,12 +40,18 @@ def disease_rows(rice_root: Path, plantvillage_root: Path | None):
                     "source": "rice_leaf_diseases",
                 })
     if plantvillage_root and plantvillage_root.is_dir():
+        leaf_map_path = plantvillage_root.parent.parent / "leaf_grouping" / "leaf-map.json"
+        leaf_map = json.loads(leaf_map_path.read_text(encoding="utf-8")) if leaf_map_path.is_file() else {}
         for class_dir in sorted(path for path in plantvillage_root.iterdir() if path.is_dir()):
             class_name = f"plantvillage__{normalized(class_dir.name)}"
             for path in image_files(class_dir):
+                source_key = path.stem.split("___", 1)[-1].lower().strip()
+                groups = leaf_map.get(source_key, [])
+                matching_groups = [group for group in groups if group.split(":::", 1)[0] == class_dir.name]
+                group_key = matching_groups[0] if matching_groups else path.as_posix()
                 pending.append({
                     "path": str(path.resolve()), "task": "disease",
-                    "split": stable_split(path), "class_name": class_name,
+                    "split": stable_split(f"plantvillage:{group_key}"), "class_name": class_name,
                     "source": "plantvillage",
                 })
     classes = {name: index for index, name in enumerate(sorted({row["class_name"] for row in pending}))}
@@ -85,7 +93,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rice-root", type=Path, default=Path("rice+leaf+diseases"))
     parser.add_argument("--deepweeds-root", type=Path, default=Path("DeepWeeds-master/DeepWeeds-master"))
-    parser.add_argument("--plantvillage-root", type=Path, default=Path("PlantVillage"))
+    parser.add_argument(
+        "--plantvillage-root", type=Path,
+        default=Path("PlantVillage-Dataset-master/PlantVillage-Dataset-master/raw/color"),
+    )
     parser.add_argument("--fold", type=int, choices=range(5), default=0)
     parser.add_argument("--output", type=Path, default=Path("ai_training/data"))
     args = parser.parse_args()
@@ -104,4 +115,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

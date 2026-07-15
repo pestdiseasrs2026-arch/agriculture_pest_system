@@ -9,7 +9,7 @@ Raw images, generated manifests, checkpoints, and exports are ignored by Git. Re
 
 ## Prepare manifests
 
-The DeepWeeds archive must be extracted to `DeepWeeds-master/DeepWeeds-master/images`. PlantVillage is optional and should be extracted as class directories below `PlantVillage`.
+The DeepWeeds archive must be extracted to `DeepWeeds-master/DeepWeeds-master/images`. The checked local PlantVillage archive is read only from `PlantVillage-Dataset-master/PlantVillage-Dataset-master/raw/color`. Grayscale and segmented copies are deliberately excluded. Where PlantVillage leaf-group metadata exists, all views of the same physical leaf are assigned to the same split to reduce leakage.
 
 ```powershell
 .\.venv\Scripts\python.exe ai_training\build_manifests.py --fold 0
@@ -31,5 +31,4 @@ MobileNetV3 weed classifier with ONNX export:
 .\.venv\Scripts\python.exe ai_training\train.py --manifest ai_training\data\weed_manifest.csv --task weed --architecture mobilenet_v3_small --epochs 20 --onnx
 ```
 
-Each run retains the best validation checkpoint, test metrics, per-class classification report, TorchScript model, and optional ONNX model. Pretrained weights are downloaded by TorchVision on the first run. Do not claim production accuracy from the 120-image rice dataset; expand it with representative field images and perform expert review first.
-
+Each run uses class-balanced sampling, retains the best validation checkpoint, test metrics, per-class classification report, TorchScript model, and optional ONNX model. Pretrained weights are downloaded by TorchVision on the first run. Do not claim production accuracy from the 120-image rice dataset; expand it with representative field images and perform expert review first.
