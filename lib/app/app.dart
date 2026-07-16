@@ -384,6 +384,28 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
+  Future<void> _logoutUser() async {
+    if (_isLoading) return;
+    if (mounted) setState(() => _isLoading = true);
+    try {
+      if (_authRepository != null) {
+        await _authRepository!.logout();
+      } else {
+        await _auth?.signOut();
+      }
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {
+        // Firebase sign-out is authoritative; Google may not be initialized.
+      }
+      if (mounted) {
+        setState(() => _currentUser = null);
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -391,7 +413,10 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     if (_currentUser != null) {
-      return FarmerDashboardScreen(user: _currentUser!);
+      return FarmerDashboardScreen(
+        user: _currentUser!,
+        onLogout: _logoutUser,
+      );
     }
 
     return const WelcomeScreen();
@@ -400,8 +425,9 @@ class _AuthGateState extends State<AuthGate> {
 
 class FarmerDashboardScreen extends StatefulWidget {
   final UserProfile user;
+  final Future<void> Function()? onLogout;
 
-  const FarmerDashboardScreen({super.key, required this.user});
+  const FarmerDashboardScreen({super.key, required this.user, this.onLogout});
 
   @override
   State<FarmerDashboardScreen> createState() => _FarmerDashboardScreenState();
@@ -415,6 +441,30 @@ class _FarmerDashboardScreenState extends State<FarmerDashboardScreen> {
   void _toggleTheme() => ProviderScope.containerOf(context)
       .read(themeModeProvider.notifier)
       .toggle(MediaQuery.platformBrightnessOf(context));
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text(
+          'You will return to the welcome screen and need to sign in again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.logout),
+            label: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await widget.onLogout?.call();
+  }
 
   final List<_ModuleAction> _moduleActions = const [
     _ModuleAction(
@@ -1278,6 +1328,7 @@ class _FarmerDashboardScreenState extends State<FarmerDashboardScreen> {
                     user: widget.user,
                     darkMode: _darkMode,
                     onThemeChanged: _toggleTheme,
+                    onLogout: _confirmLogout,
                   ),
                   Expanded(child: body),
                 ],
@@ -1302,6 +1353,11 @@ class _FarmerDashboardScreenState extends State<FarmerDashboardScreen> {
           IconButton(
             onPressed: _toggleTheme,
             icon: Icon(_darkMode ? Icons.light_mode : Icons.dark_mode),
+          ),
+          IconButton(
+            tooltip: 'Log out',
+            onPressed: _confirmLogout,
+            icon: const Icon(Icons.logout),
           ),
         ],
       ),
@@ -1337,11 +1393,13 @@ class _DashboardTopBar extends StatelessWidget {
   final UserProfile user;
   final bool darkMode;
   final VoidCallback onThemeChanged;
+  final VoidCallback onLogout;
 
   const _DashboardTopBar({
     required this.user,
     required this.darkMode,
     required this.onThemeChanged,
+    required this.onLogout,
   });
 
   @override
@@ -1426,6 +1484,12 @@ class _DashboardTopBar extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Log out',
+              onPressed: onLogout,
+              icon: const Icon(Icons.logout),
             ),
           ],
         ),

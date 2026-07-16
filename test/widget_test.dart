@@ -106,6 +106,37 @@ void main() {
     expect(find.text('Crop Records'), findsWidgets);
   });
 
+  testWidgets('dashboard header confirms logout', (tester) async {
+    var loggedOut = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FarmerDashboardScreen(
+          user: const UserProfile(
+            uid: 'demo-user',
+            fullName: 'Demo Farmer',
+            email: 'farmer@example.com',
+            phone: '',
+            location: '',
+            profileImage: '',
+            authProvider: 'email',
+            role: UserRole.farmer,
+            accountStatus: AccountStatus.active,
+          ),
+          onLogout: () async => loggedOut = true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Log out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log out?'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Log out'));
+    await tester.pumpAndSettle();
+    expect(loggedOut, isTrue);
+  });
+
   testWidgets('farm profile screen shows the farm creation form', (
     tester,
   ) async {
