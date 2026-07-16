@@ -56,6 +56,42 @@ class AuthProfileRepository {
 
   Future<void> resetPassword(String email) =>
       auth.sendPasswordResetEmail(email: email);
+  Future<void> sendVerification() async {
+    final user = auth.currentUser;
+    if (user != null && !user.emailVerified) await user.sendEmailVerification();
+  }
+  Future<User?> reloadUser() async {
+    await auth.currentUser?.reload();
+    return auth.currentUser;
+  }
+  Future<void> reauthenticateWithPassword(String password) async {
+    final user = auth.currentUser;
+    final email = user?.email;
+    if (user == null || email == null) {
+      throw FirebaseAuthException(code: 'requires-recent-login');
+    }
+    await user.reauthenticateWithCredential(
+      EmailAuthProvider.credential(email: email, password: password),
+    );
+  }
+  Future<void> changePassword(String password) async {
+    await auth.currentUser?.updatePassword(password);
+  }
+  Future<void> recordSecurityEvent(String event, {String outcome = 'success'}) async {
+    final user = auth.currentUser;
+    if (user == null) return;
+    final batch = db.batch();
+    batch.set(db.collection('system_logs').doc(), {
+      'userId': user.uid, 'event': event, 'outcome': outcome,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+    batch.set(db.collection('notifications').doc(), {
+      'userId': user.uid, 'title': 'Account security activity',
+      'message': event.replaceAll('_', ' '), 'type': 'security',
+      'createdAt': FieldValue.serverTimestamp(), 'read': false,
+    });
+    await batch.commit();
+  }
   Future<void> logout() => auth.signOut();
 }
 

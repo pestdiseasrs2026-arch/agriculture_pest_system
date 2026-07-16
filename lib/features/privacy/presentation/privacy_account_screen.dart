@@ -1,5 +1,6 @@
 import 'package:agriculture_pest_system/core/models/app_models.dart';
 import 'package:agriculture_pest_system/core/providers/repository_providers.dart';
+import 'package:agriculture_pest_system/features/auth_security/domain/auth_security.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,6 +18,12 @@ class _PrivacyAccountScreenState extends ConsumerState<PrivacyAccountScreen> {
 
   Future<void> _requestDeletion() async {
     final controller = TextEditingController();
+    final passwordController = TextEditingController();
+    final authRepository = ref.read(authProfileRepositoryProvider);
+    final passwordAccount = authRepository.auth.currentUser?.providerData.any(
+          (provider) => provider.providerId == 'password',
+        ) ??
+        false;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -35,6 +42,17 @@ class _PrivacyAccountScreenState extends ConsumerState<PrivacyAccountScreen> {
                 labelText: 'Type DELETE to confirm',
               ),
             ),
+            if (passwordAccount) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Current password',
+                  helperText: 'Required to verify this sensitive action',
+                ),
+              ),
+            ],
           ],
         ),
         actions: [
@@ -50,17 +68,34 @@ class _PrivacyAccountScreenState extends ConsumerState<PrivacyAccountScreen> {
         ],
       ),
     );
+    final password = passwordController.text;
     controller.dispose();
+    passwordController.dispose();
     if (confirmed != true) return;
     setState(() => busy = true);
     try {
+      if (passwordAccount) {
+        await authRepository.reauthenticateWithPassword(password);
+      } else {
+        final lastSignIn = authRepository.auth.currentUser?.metadata.lastSignInTime;
+        if (lastSignIn == null || DateTime.now().difference(lastSignIn) > const Duration(minutes: 5)) {
+          throw StateError('For security, log out and sign in again before deleting your account.');
+        }
+      }
       await ref
           .read(dataLifecycleRepositoryProvider)
           .requestAccountDeletion(widget.user.uid);
+      await authRepository.recordSecurityEvent('account_deletion_requested');
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Deletion request failed: $error')),
+          SnackBar(
+            content: Text(
+              error is StateError
+                  ? error.message
+                  : accessibleAuthMessage(error),
+            ),
+          ),
         );
       }
     } finally {

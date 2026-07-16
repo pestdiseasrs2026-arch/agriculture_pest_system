@@ -75,7 +75,7 @@ jobs:
       - run: npm install --no-audit --no-fund
         working-directory: firebase-tests
       - run: npm install --global firebase-tools
-      - run: firebase emulators:exec --project agriculture-pest-system-96401 --only firestore,database,storage "npm test --prefix firebase-tests"
+      - run: firebase emulators:exec --project agriculture-pest-system-96401 --only auth,firestore,database,storage "npm test --prefix firebase-tests"
 
   functions:
     runs-on: ubuntu-latest

@@ -24,6 +24,8 @@ import 'package:agriculture_pest_system/features/ai_detection/presentation/detec
 import 'package:agriculture_pest_system/features/operations/presentation/operation_panels.dart';
 import 'package:agriculture_pest_system/features/insights/presentation/insight_workspaces.dart';
 import 'package:agriculture_pest_system/features/privacy/presentation/privacy_account_screen.dart';
+import 'package:agriculture_pest_system/features/auth_security/domain/auth_security.dart';
+import 'package:agriculture_pest_system/features/auth_security/presentation/account_security_screen.dart';
 import 'package:agriculture_pest_system/core/providers/repository_providers.dart';
 import 'package:agriculture_pest_system/core/repositories/feature_repositories.dart';
 
@@ -125,6 +127,8 @@ class _AuthGateState extends State<AuthGate> {
   UserProfile? _currentUser;
   bool _isLoading = false;
   bool _firebaseReady = false;
+  int _failedLoginAttempts = 0;
+  DateTime? _loginBlockedUntil;
 
   @override
   void initState() {
@@ -286,6 +290,7 @@ class _AuthGateState extends State<AuthGate> {
       }
 
       await user.updateDisplayName(profile.fullName);
+      await user.sendEmailVerification();
 
       final savedProfile = profile.copyWith(
         uid: user.uid,
@@ -312,6 +317,7 @@ class _AuthGateState extends State<AuthGate> {
         _currentUser = savedProfile;
         _isLoading = false;
       });
+      unawaited(_authRepository?.recordSecurityEvent('account_registered'));
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
       rethrow;
@@ -320,6 +326,10 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _loginUser(String email, String password) async {
     if (_isLoading) return;
+    final blockedUntil = _loginBlockedUntil;
+    if (blockedUntil != null && DateTime.now().isBefore(blockedUntil)) {
+      throw FirebaseAuthException(code: 'too-many-requests');
+    }
     if (!_firebaseReady || _auth == null) {
       throw FirebaseAuthException(
         code: 'firebase-not-ready',
@@ -343,7 +353,17 @@ class _AuthGateState extends State<AuthGate> {
       }
 
       await _loadProfileFor(user);
+      _failedLoginAttempts = 0;
+      _loginBlockedUntil = null;
+      unawaited(_authRepository?.recordSecurityEvent('login_succeeded'));
     } catch (_) {
+      _failedLoginAttempts += 1;
+      if (_failedLoginAttempts >= 3) {
+        final rawExponent = _failedLoginAttempts - 3;
+        final exponent = rawExponent > 4 ? 4 : rawExponent;
+        final seconds = 30 * (1 << exponent);
+        _loginBlockedUntil = DateTime.now().add(Duration(seconds: seconds));
+      }
       if (mounted) setState(() => _isLoading = false);
       rethrow;
     }
@@ -396,6 +416,17 @@ class _AuthGateState extends State<AuthGate> {
         .timeout(const Duration(seconds: 15));
   }
 
+  Future<void> _resendVerification() async {
+    await _authRepository?.sendVerification();
+    unawaited(_authRepository?.recordSecurityEvent('verification_email_sent'));
+  }
+
+  Future<bool> _refreshVerification() async {
+    final user = await _authRepository?.reloadUser();
+    if (mounted) setState(() {});
+    return user?.emailVerified ?? false;
+  }
+
   Future<void> _logoutUser() async {
     if (_isLoading) return;
     if (mounted) setState(() => _isLoading = true);
@@ -425,10 +456,100 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     if (_currentUser != null) {
+      final firebaseUser = _auth?.currentUser;
+      final passwordAccount = firebaseUser?.providerData.any(
+            (provider) => provider.providerId == 'password',
+          ) ??
+          false;
+      if (firebaseUser != null && passwordAccount && !firebaseUser.emailVerified) {
+        return EmailVerificationScreen(
+          email: firebaseUser.email ?? _currentUser!.email,
+          onResend: _resendVerification,
+          onRefresh: _refreshVerification,
+          onLogout: _logoutUser,
+        );
+      }
       return FarmerDashboardScreen(user: _currentUser!, onLogout: _logoutUser);
     }
 
     return const WelcomeScreen();
+  }
+}
+
+class EmailVerificationScreen extends StatefulWidget {
+  final String email;
+  final Future<void> Function() onResend;
+  final Future<bool> Function() onRefresh;
+  final Future<void> Function() onLogout;
+
+  const EmailVerificationScreen({
+    super.key,
+    required this.email,
+    required this.onResend,
+    required this.onRefresh,
+    required this.onLogout,
+  });
+
+  @override
+  State<EmailVerificationScreen> createState() => _EmailVerificationScreenState();
+}
+
+class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
+  bool busy = false;
+
+  Future<void> _run(Future<void> Function() operation) async {
+    setState(() => busy = true);
+    try {
+      await operation();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(accessibleAuthMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.mark_email_unread_outlined, size: 64, color: Colors.green.shade700),
+                      const SizedBox(height: 16),
+                      Text('Verify your email', style: Theme.of(context).textTheme.headlineSmall),
+                      const SizedBox(height: 12),
+                      Text('We sent a verification link to ${widget.email}. Verify it before accessing farm data and sensitive operations.', textAlign: TextAlign.center),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: busy ? null : () => _run(() async { await widget.onRefresh(); }),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('I have verified my email'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(onPressed: busy ? null : () => _run(widget.onResend), child: const Text('Resend verification email')),
+                      TextButton.icon(onPressed: busy ? null : () => _run(widget.onLogout), icon: const Icon(Icons.logout), label: const Text('Use another account')),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -678,6 +799,11 @@ class _FarmerDashboardScreenState extends State<FarmerDashboardScreen> {
           ),
         );
         break;
+      case 'account-security':
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AccountSecurityScreen()),
+        );
+        break;
     }
   }
 
@@ -712,6 +838,11 @@ class _FarmerDashboardScreenState extends State<FarmerDashboardScreen> {
         Icons.privacy_tip_outlined,
         'Privacy & Account',
         'privacy',
+      ),
+      const _NavItem(
+        Icons.shield_outlined,
+        'Account Security',
+        'account-security',
       ),
     ];
     if (widget.user.role == UserRole.admin) {
@@ -4473,10 +4604,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                               ),
                             ),
-                            validator: (value) =>
-                                value == null || value.length < 6
-                                ? 'Use at least 6 characters'
-                                : null,
+                            validator: PasswordPolicy.validate,
                           ),
                           const SizedBox(height: 12),
                           TextFormField(
@@ -4588,7 +4716,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      ).showSnackBar(SnackBar(content: Text(accessibleAuthMessage(error))));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
