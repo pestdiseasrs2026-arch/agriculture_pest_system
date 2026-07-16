@@ -61,48 +61,51 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return MaterialApp(
-      title: 'Agriculture Pest System',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: ref.watch(themeModeProvider),
-      builder: (context, child) {
-        final flags = FeatureFlags.instance;
-        if (flags.maintenanceMode) {
-          return AccessibleApp(
-            child: Material(
-              color: Theme.of(context).colorScheme.surface,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 520),
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.engineering_outlined, size: 64),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Scheduled maintenance',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          flags.maintenanceMessage,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+    return AnimatedBuilder(
+      animation: FeatureFlags.instance,
+      builder: (context, _) => MaterialApp(
+        title: 'Agriculture Pest System',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ref.watch(themeModeProvider),
+        builder: (context, child) {
+          final flags = FeatureFlags.instance;
+          if (flags.maintenanceMode) {
+            return AccessibleApp(
+              child: Material(
+                color: Theme.of(context).colorScheme.surface,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.engineering_outlined, size: 64),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Scheduled maintenance',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            flags.maintenanceMessage,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          );
-        }
-        return AccessibleApp(child: child!);
-      },
-      home: home ?? const AuthGate(),
+            );
+          }
+          return AccessibleApp(child: child!);
+        },
+        home: home ?? const AuthGate(),
+      ),
     );
   }
 }
@@ -195,11 +198,14 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<UserProfile> _loadProfileFor(User user) async {
-    if (mounted) {
-      setState(() => _isLoading = true);
-    }
-
     final fallbackProfile = _fallbackProfileFor(user);
+
+    if (mounted && _currentUser?.uid != user.uid) {
+      setState(() {
+        _currentUser = fallbackProfile;
+        _isLoading = false;
+      });
+    }
 
     if (!_firebaseReady || _authRepository == null) {
       if (mounted) {

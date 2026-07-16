@@ -100,12 +100,12 @@ abstract final class ProductionOperations {
 
   static void _apply(FirebaseRemoteConfig config) {
     final flags = FeatureFlags.instance;
-    flags.maintenanceMode = config.getBool('maintenance_mode');
-    flags.maintenanceMessage = config.getString('maintenance_message');
-    flags.aiDetectionEnabled = config.getBool('ai_detection_enabled');
-    flags.uploadsEnabled = config.getBool('uploads_enabled');
-    flags.minimumSupportedVersion = config.getString(
-      'minimum_supported_version',
+    flags.update(
+      maintenanceMode: config.getBool('maintenance_mode'),
+      maintenanceMessage: config.getString('maintenance_message'),
+      aiDetectionEnabled: config.getBool('ai_detection_enabled'),
+      uploadsEnabled: config.getBool('uploads_enabled'),
+      minimumSupportedVersion: config.getString('minimum_supported_version'),
     );
   }
 }

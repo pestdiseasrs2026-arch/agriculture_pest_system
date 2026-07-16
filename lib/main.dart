@@ -33,8 +33,12 @@ void main() {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-      await ProductionOperations.initialize();
       runApp(const ProviderScope(child: MyApp()));
+      unawaited(
+        ProductionOperations.initialize().catchError((Object error, StackTrace stackTrace) {
+          appErrorReporter.record(error, stackTrace);
+        }),
+      );
     },
     (error, stackTrace) {
       appErrorReporter.record(error, stackTrace, fatal: true);
