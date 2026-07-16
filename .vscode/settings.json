@@ -1,0 +1,24 @@
+{
+  "files.watcherExclude": {
+    "**/.dart_tool/**": true,
+    "**/.venv/**": true,
+    "**/.venv-ai/**": true,
+    "**/PlantVillage-Dataset-master/**": true,
+    "**/DeepWeeds-master/**": true,
+    "**/rice+leaf+diseases/**": true,
+    "**/gradle-9.4.1-bin/**": true,
+    "**/ai_training/data/**": true,
+    "**/ai_training/outputs/**": true,
+    "**/build/**": true
+  },
+  "search.exclude": {
+    "**/.venv/**": true,
+    "**/.venv-ai/**": true,
+    "**/PlantVillage-Dataset-master/**": true,
+    "**/DeepWeeds-master/**": true,
+    "**/rice+leaf+diseases/**": true,
+    "**/gradle-9.4.1-bin/**": true,
+    "**/ai_training/data/**": true,
+    "**/ai_training/outputs/**": true
+  }
+}

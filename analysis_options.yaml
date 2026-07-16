@@ -14,7 +14,14 @@ analyzer:
     - .dart_tool/**
     - .pub-cache/**
     - .venv/**
+    - .venv-ai/**
     - build/**
+    - PlantVillage-Dataset-master/**
+    - DeepWeeds-master/**
+    - rice+leaf+diseases/**
+    - gradle-9.4.1-bin/**
+    - ai_training/data/**
+    - ai_training/outputs/**
     - "**/ephemeral/**"
 
 linter:

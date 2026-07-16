@@ -30,15 +30,24 @@ void main() {
         return true;
       };
 
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
+      try {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        ).timeout(const Duration(seconds: 15));
+      } catch (error, stackTrace) {
+        appErrorReporter.record(error, stackTrace);
+      }
       runApp(const ProviderScope(child: MyApp()));
-      unawaited(
-        ProductionOperations.initialize().catchError((Object error, StackTrace stackTrace) {
-          appErrorReporter.record(error, stackTrace);
-        }),
-      );
+      if (Firebase.apps.isNotEmpty) {
+        unawaited(
+          ProductionOperations.initialize().catchError((
+            Object error,
+            StackTrace stackTrace,
+          ) {
+            appErrorReporter.record(error, stackTrace);
+          }),
+        );
+      }
     },
     (error, stackTrace) {
       appErrorReporter.record(error, stackTrace, fatal: true);
