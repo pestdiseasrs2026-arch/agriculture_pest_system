@@ -384,6 +384,18 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
+  Future<void> _sendPasswordReset(String email) async {
+    if (!_firebaseReady || _authRepository == null) {
+      throw FirebaseAuthException(
+        code: 'firebase-not-ready',
+        message: 'Password reset is temporarily unavailable.',
+      );
+    }
+    await _authRepository!
+        .resetPassword(email.trim().toLowerCase())
+        .timeout(const Duration(seconds: 15));
+  }
+
   Future<void> _logoutUser() async {
     if (_isLoading) return;
     if (mounted) setState(() => _isLoading = true);
@@ -413,10 +425,7 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     if (_currentUser != null) {
-      return FarmerDashboardScreen(
-        user: _currentUser!,
-        onLogout: _logoutUser,
-      );
+      return FarmerDashboardScreen(user: _currentUser!, onLogout: _logoutUser);
     }
 
     return const WelcomeScreen();
@@ -4181,6 +4190,13 @@ class WelcomeScreen extends StatelessWidget {
                                       password,
                                     );
                                   },
+                                  onResetPassword: (email) async {
+                                    final gateState = context
+                                        .findAncestorStateOfType<
+                                          _AuthGateState
+                                        >();
+                                    await gateState?._sendPasswordReset(email);
+                                  },
                                 ),
                               ),
                             );
@@ -4531,8 +4547,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
 class LoginScreen extends StatefulWidget {
   final Future<void> Function(String email, String password) onLogin;
+  final Future<void> Function(String email) onResetPassword;
 
-  const LoginScreen({super.key, required this.onLogin});
+  const LoginScreen({
+    super.key,
+    required this.onLogin,
+    required this.onResetPassword,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -4571,6 +4592,17 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _openPasswordReset() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(
+          initialEmail: _emailController.text.trim(),
+          onResetPassword: widget.onResetPassword,
+        ),
+      ),
+    );
   }
 
   @override
@@ -4673,7 +4705,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ? 'Enter your password'
                                 : null,
                           ),
-                          const SizedBox(height: 20),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: _loading ? null : _openPasswordReset,
+                              icon: const Icon(Icons.lock_reset_outlined),
+                              label: const Text('Forgot password?'),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
@@ -4704,6 +4744,181 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ForgotPasswordScreen extends StatefulWidget {
+  final String initialEmail;
+  final Future<void> Function(String email) onResetPassword;
+
+  const ForgotPasswordScreen({
+    super.key,
+    this.initialEmail = '',
+    required this.onResetPassword,
+  });
+
+  @override
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+}
+
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _emailController;
+  bool _loading = false;
+  bool _sent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  String? _validateEmail(String? value) {
+    final email = value?.trim() ?? '';
+    if (email.isEmpty) return 'Enter your email address';
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return 'Enter a valid email address';
+    }
+    return null;
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _loading = true);
+    try {
+      await widget.onResetPassword(_emailController.text.trim());
+      if (mounted) setState(() => _sent = true);
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      if (error.code == 'user-not-found' || error.code == 'invalid-email') {
+        setState(() => _sent = true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to send the reset email. Please try again.'),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to send the reset email. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Reset password')),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: _sent
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.mark_email_read_outlined,
+                              size: 64,
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Check your email',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'If an account exists for that email, a password-reset link has been sent. Check your spam folder if it does not arrive.',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 20),
+                            FilledButton.icon(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.login),
+                              label: const Text('Return to login'),
+                            ),
+                          ],
+                        )
+                      : Form(
+                          key: _formKey,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Icon(
+                                Icons.lock_reset_outlined,
+                                size: 56,
+                                color: Colors.green.shade700,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Forgot your password?',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.headlineSmall,
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Enter the email used for your account. We will send instructions for choosing a new password.',
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 20),
+                              TextFormField(
+                                controller: _emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                autofillHints: const [AutofillHints.email],
+                                textInputAction: TextInputAction.done,
+                                onFieldSubmitted: (_) =>
+                                    _loading ? null : _submit(),
+                                decoration: const InputDecoration(
+                                  labelText: 'Email address',
+                                  prefixIcon: Icon(Icons.email_outlined),
+                                ),
+                                validator: _validateEmail,
+                              ),
+                              const SizedBox(height: 20),
+                              FilledButton.icon(
+                                onPressed: _loading ? null : _submit,
+                                icon: _loading
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.send_outlined),
+                                label: const Text('Send reset link'),
+                              ),
+                            ],
+                          ),
+                        ),
                 ),
               ),
             ),

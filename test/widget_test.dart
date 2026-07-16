@@ -81,6 +81,33 @@ void main() {
     expect(find.text('Account status'), findsOneWidget);
   });
 
+  testWidgets('forgot-password flow sends a reset request', (tester) async {
+    String? requestedEmail;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LoginScreen(
+          onLogin: (_, _) async {},
+          onResetPassword: (email) async => requestedEmail = email,
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot your password?'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email address'),
+      'farmer@example.com',
+    );
+    await tester.tap(find.text('Send reset link'));
+    await tester.pumpAndSettle();
+
+    expect(requestedEmail, 'farmer@example.com');
+    expect(find.text('Check your email'), findsOneWidget);
+    expect(find.text('Return to login'), findsOneWidget);
+  });
+
   testWidgets('farmer dashboard shows core management actions', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
