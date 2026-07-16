@@ -31,4 +31,10 @@ MobileNetV3 weed classifier with ONNX export:
 .\.venv\Scripts\python.exe ai_training\train.py --manifest ai_training\data\weed_manifest.csv --task weed --architecture mobilenet_v3_small --epochs 20 --onnx
 ```
 
+For CPU-only machines, start with a frozen 160px backbone, then fine-tune on a GPU if required:
+
+```powershell
+.\.venv\Scripts\python.exe -u ai_training\train.py --manifest ai_training\data\weed_manifest.csv --task weed --architecture mobilenet_v3_small --image-size 160 --freeze-backbone --epochs 20 --batch-size 8
+```
+
 Each run uses class-balanced sampling, retains the best validation checkpoint, test metrics, per-class classification report, TorchScript model, and optional ONNX model. Pretrained weights are downloaded by TorchVision on the first run. Do not claim production accuracy from the 120-image rice dataset; expand it with representative field images and perform expert review first.

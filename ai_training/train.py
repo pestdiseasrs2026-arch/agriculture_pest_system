@@ -54,12 +54,12 @@ def build_model(name: str, classes: int):
     return model
 
 
-def run_epoch(model, loader, loss_fn, device, optimizer=None):
+def run_epoch(model, loader, loss_fn, device, optimizer=None, progress_label=""):
     training = optimizer is not None
     model.train(training)
     total_loss, correct, count = 0.0, 0, 0
     predictions, targets = [], []
-    for images, labels in loader:
+    for batch_index, (images, labels) in enumerate(loader, start=1):
         images, labels = images.to(device), labels.to(device)
         if training:
             optimizer.zero_grad(set_to_none=True)
@@ -75,6 +75,12 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
         count += labels.size(0)
         predictions.extend(predicted.cpu().tolist())
         targets.extend(labels.cpu().tolist())
+        if progress_label and (batch_index % 250 == 0 or batch_index == len(loader)):
+            print(
+                f"{progress_label} batch={batch_index}/{len(loader)} "
+                f"accuracy={correct / count:.4f}",
+                flush=True,
+            )
     return total_loss / count, correct / count, predictions, targets
 
 
@@ -87,6 +93,8 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--image-size", type=int, default=224)
+    parser.add_argument("--freeze-backbone", action="store_true")
     parser.add_argument("--output", type=Path, default=Path("ai_training/outputs"))
     parser.add_argument("--onnx", action="store_true")
     args = parser.parse_args()
@@ -99,13 +107,14 @@ def main() -> None:
         raise ValueError(f"Class indices must be contiguous from zero; got {sorted(class_names)}")
 
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+        transforms.RandomResizedCrop(args.image_size, scale=(0.7, 1.0)),
         transforms.RandomHorizontalFlip(), transforms.RandomRotation(12),
         transforms.ColorJitter(0.15, 0.15, 0.15, 0.05), transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
     eval_transform = transforms.Compose([
-        transforms.Resize(256), transforms.CenterCrop(224), transforms.ToTensor(),
+        transforms.Resize(round(args.image_size * 256 / 224)),
+        transforms.CenterCrop(args.image_size), transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
     loaders = {}
@@ -128,7 +137,14 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = build_model(args.architecture, len(class_names)).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
+    if args.freeze_backbone:
+        for parameter in model.features.parameters():
+            parameter.requires_grad = False
+    optimizer = torch.optim.AdamW(
+        (parameter for parameter in model.parameters() if parameter.requires_grad),
+        lr=args.learning_rate,
+        weight_decay=1e-4,
+    )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(args.epochs, 1))
     loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
     output = args.output / args.task
@@ -137,8 +153,14 @@ def main() -> None:
     history = []
     started = time.time()
     for epoch in range(1, args.epochs + 1):
-        train_loss, train_accuracy, _, _ = run_epoch(model, loaders["train"], loss_fn, device, optimizer)
-        val_loss, val_accuracy, _, _ = run_epoch(model, loaders["val"], loss_fn, device)
+        train_loss, train_accuracy, _, _ = run_epoch(
+            model, loaders["train"], loss_fn, device, optimizer,
+            progress_label=f"epoch={epoch} train",
+        )
+        val_loss, val_accuracy, _, _ = run_epoch(
+            model, loaders["val"], loss_fn, device,
+            progress_label=f"epoch={epoch} val",
+        )
         scheduler.step()
         history.append({"epoch": epoch, "train_loss": train_loss, "train_accuracy": train_accuracy,
                         "val_loss": val_loss, "val_accuracy": val_accuracy})
@@ -152,7 +174,7 @@ def main() -> None:
     report = classification_report(targets, predictions, labels=expected,
                                    target_names=[class_names[i] for i in expected], zero_division=0, output_dict=True)
     model.eval().cpu()
-    example = torch.zeros(1, 3, 224, 224)
+    example = torch.zeros(1, 3, args.image_size, args.image_size)
     torch.jit.trace(model, example).save(str(output / "model.torchscript.pt"))
     if args.onnx:
         try:
@@ -163,6 +185,7 @@ def main() -> None:
             raise RuntimeError("ONNX export failed. Install compatible onnx and onnxruntime packages.") from error
     metadata = {
         "task": args.task, "architecture": args.architecture, "classes": class_names,
+        "image_size": args.image_size, "backbone_frozen": args.freeze_backbone,
         "best_validation_accuracy": best_accuracy, "test_accuracy": test_accuracy,
         "test_loss": test_loss, "seconds": time.time() - started, "device": str(device),
         "records_by_split": Counter(row["split"] for row in rows),
